@@ -1,5 +1,6 @@
 """
 Main Flask application with ChatGPT integration
+Enhanced with file operations and code execution
 """
 
 from flask import Flask, request, jsonify
@@ -105,6 +106,194 @@ def generate():
             "prompt": prompt,
             "generated_text": response
         }), 200
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ============== FILE OPERATIONS ==============
+
+@app.route('/file/read', methods=['POST'])
+def read_file():
+    """
+    Read file endpoint
+    Expected JSON: {"file_path": "path/to/file"}
+    """
+    if not chatgpt:
+        return jsonify({"error": "ChatGPT not initialized"}), 500
+    
+    try:
+        data = request.get_json()
+        
+        if not data or 'file_path' not in data:
+            return jsonify({"error": "file_path field is required"}), 400
+        
+        file_path = data.get('file_path')
+        content = chatgpt.read_file(file_path)
+        
+        return jsonify({
+            "status": "success",
+            "file_path": file_path,
+            "content": content
+        }), 200
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/file/write', methods=['POST'])
+def write_file():
+    """
+    Write file endpoint
+    Expected JSON: {"file_path": "path/to/file", "content": "...", "append": false}
+    """
+    if not chatgpt:
+        return jsonify({"error": "ChatGPT not initialized"}), 500
+    
+    try:
+        data = request.get_json()
+        
+        if not data or 'file_path' not in data or 'content' not in data:
+            return jsonify({"error": "file_path and content fields are required"}), 400
+        
+        file_path = data.get('file_path')
+        content = data.get('content')
+        append = data.get('append', False)
+        
+        result = chatgpt.write_file(file_path, content, append)
+        
+        return jsonify(result), 200
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/file/delete', methods=['POST'])
+def delete_file():
+    """
+    Delete file endpoint
+    Expected JSON: {"file_path": "path/to/file"}
+    """
+    if not chatgpt:
+        return jsonify({"error": "ChatGPT not initialized"}), 500
+    
+    try:
+        data = request.get_json()
+        
+        if not data or 'file_path' not in data:
+            return jsonify({"error": "file_path field is required"}), 400
+        
+        file_path = data.get('file_path')
+        result = chatgpt.delete_file(file_path)
+        
+        return jsonify(result), 200
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/file/list', methods=['POST'])
+def list_files():
+    """
+    List files endpoint
+    Expected JSON: {"directory": "."}
+    """
+    if not chatgpt:
+        return jsonify({"error": "ChatGPT not initialized"}), 500
+    
+    try:
+        data = request.get_json() or {}
+        directory = data.get('directory', '.')
+        
+        files = chatgpt.list_files(directory)
+        
+        return jsonify({
+            "status": "success",
+            "directory": directory,
+            "files": files,
+            "count": len(files)
+        }), 200
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ============== CODE EXECUTION ==============
+
+@app.route('/execute', methods=['POST'])
+def execute_code():
+    """
+    Execute code endpoint
+    Expected JSON: {"code": "...", "language": "python", "timeout": 30}
+    """
+    if not chatgpt:
+        return jsonify({"error": "ChatGPT not initialized"}), 500
+    
+    try:
+        data = request.get_json()
+        
+        if not data or 'code' not in data:
+            return jsonify({"error": "code field is required"}), 400
+        
+        code = data.get('code')
+        language = data.get('language', 'python')
+        timeout = data.get('timeout', 30)
+        
+        result = chatgpt.execute_code(code, language, timeout)
+        
+        return jsonify(result), 200
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/execute/python', methods=['POST'])
+def execute_python():
+    """
+    Execute Python code endpoint (shortcut)
+    Expected JSON: {"code": "...", "timeout": 30}
+    """
+    if not chatgpt:
+        return jsonify({"error": "ChatGPT not initialized"}), 500
+    
+    try:
+        data = request.get_json()
+        
+        if not data or 'code' not in data:
+            return jsonify({"error": "code field is required"}), 400
+        
+        code = data.get('code')
+        timeout = data.get('timeout', 30)
+        
+        result = chatgpt.execute_code(code, 'python', timeout)
+        
+        return jsonify(result), 200
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/execute/bash', methods=['POST'])
+def execute_bash():
+    """
+    Execute Bash code endpoint (shortcut)
+    Expected JSON: {"code": "...", "timeout": 30}
+    """
+    if not chatgpt:
+        return jsonify({"error": "ChatGPT not initialized"}), 500
+    
+    try:
+        data = request.get_json()
+        
+        if not data or 'code' not in data:
+            return jsonify({"error": "code field is required"}), 400
+        
+        code = data.get('code')
+        timeout = data.get('timeout', 30)
+        
+        result = chatgpt.execute_code(code, 'bash', timeout)
+        
+        return jsonify(result), 200
     
     except Exception as e:
         return jsonify({"error": str(e)}), 500
