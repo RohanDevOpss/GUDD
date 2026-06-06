@@ -1,0 +1,3 @@
+# GUDD
+- name: ChatGPT Integration
+  uses: kxxt/chatgpt-action@v0.3
