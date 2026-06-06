@@ -7,10 +7,15 @@ and perform file read, write, and execute operations
 import os
 import subprocess
 import json
+import logging
 from dotenv import load_dotenv
 import openai
 from typing import List, Dict, Optional, Any
 from pathlib import Path
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -25,12 +30,22 @@ class ChatGPTIntegration:
         self.work_directory = os.getenv('WORK_DIRECTORY', './workspace')
         
         if not self.api_key:
-            raise ValueError("OPENAI_API_KEY not found in environment variables")
+            raise ValueError(
+                "OPENAI_API_KEY not found in environment variables.\n"
+                "Please set it in your .env file or environment.\n"
+                "Get your key from: https://platform.openai.com/account/api-keys"
+            )
+        
+        if self.api_key.startswith('sk-'):
+            logger.info(f"✓ API key found (using model: {self.model})")
+        else:
+            logger.warning("⚠ API key format may be invalid (should start with 'sk-')")
         
         openai.api_key = self.api_key
         
         # Create workspace directory if it doesn't exist
         Path(self.work_directory).mkdir(parents=True, exist_ok=True)
+        logger.info(f"✓ Workspace directory ready: {self.work_directory}")
     
     def _validate_path(self, file_path: str) -> str:
         """
@@ -78,9 +93,13 @@ class ChatGPTIntegration:
                 raise ValueError(f"Path is not a file: {file_path}")
             
             with open(abs_path, 'r', encoding='utf-8') as f:
-                return f.read()
+                content = f.read()
+            
+            logger.info(f"✓ Read file: {file_path} ({len(content)} bytes)")
+            return content
         
         except Exception as e:
+            logger.error(f"✗ Error reading file: {str(e)}")
             raise Exception(f"Error reading file: {str(e)}")
     
     def write_file(self, file_path: str, content: str, append: bool = False) -> Dict[str, Any]:
@@ -105,15 +124,19 @@ class ChatGPTIntegration:
             with open(abs_path, mode, encoding='utf-8') as f:
                 f.write(content)
             
+            mode_str = "append" if append else "write"
+            logger.info(f"✓ {mode_str.capitalize()} file: {file_path} ({len(content)} bytes)")
+            
             return {
                 "status": "success",
                 "file_path": file_path,
-                "mode": "append" if append else "write",
+                "mode": mode_str,
                 "size": len(content),
                 "full_path": abs_path
             }
         
         except Exception as e:
+            logger.error(f"✗ Error writing file: {str(e)}")
             raise Exception(f"Error writing file: {str(e)}")
     
     def execute_code(self, code: str, language: str = "python", timeout: int = 30) -> Dict[str, Any]:
@@ -137,6 +160,7 @@ class ChatGPTIntegration:
                 raise ValueError(f"Unsupported language: {language}")
         
         except Exception as e:
+            logger.error(f"✗ Execution error: {str(e)}")
             return {
                 "status": "error",
                 "language": language,
@@ -161,7 +185,10 @@ class ChatGPTIntegration:
             )
             
             # Clean up
-            os.remove(temp_file)
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+            
+            logger.info(f"✓ Python execution completed (return code: {result.returncode})")
             
             return {
                 "status": "success" if result.returncode == 0 else "error",
@@ -173,6 +200,7 @@ class ChatGPTIntegration:
             }
         
         except subprocess.TimeoutExpired:
+            logger.error(f"✗ Python execution timed out after {timeout} seconds")
             return {
                 "status": "error",
                 "language": "python",
@@ -181,6 +209,7 @@ class ChatGPTIntegration:
             }
         
         except Exception as e:
+            logger.error(f"✗ Python execution error: {str(e)}")
             return {
                 "status": "error",
                 "language": "python",
@@ -200,6 +229,8 @@ class ChatGPTIntegration:
                 cwd=self.work_directory
             )
             
+            logger.info(f"✓ Bash execution completed (return code: {result.returncode})")
+            
             return {
                 "status": "success" if result.returncode == 0 else "error",
                 "language": "bash",
@@ -210,6 +241,7 @@ class ChatGPTIntegration:
             }
         
         except subprocess.TimeoutExpired:
+            logger.error(f"✗ Bash execution timed out after {timeout} seconds")
             return {
                 "status": "error",
                 "language": "bash",
@@ -218,6 +250,7 @@ class ChatGPTIntegration:
             }
         
         except Exception as e:
+            logger.error(f"✗ Bash execution error: {str(e)}")
             return {
                 "status": "error",
                 "language": "bash",
@@ -247,9 +280,11 @@ class ChatGPTIntegration:
                 rel_path = os.path.relpath(item_path, self.work_directory)
                 files.append(rel_path)
             
+            logger.info(f"✓ Listed {len(files)} items in directory: {directory}")
             return files
         
         except Exception as e:
+            logger.error(f"✗ Error listing files: {str(e)}")
             raise Exception(f"Error listing files: {str(e)}")
     
     def delete_file(self, file_path: str) -> Dict[str, Any]:
@@ -272,6 +307,7 @@ class ChatGPTIntegration:
                 raise ValueError(f"Path is not a file: {file_path}")
             
             os.remove(abs_path)
+            logger.info(f"✓ Deleted file: {file_path}")
             
             return {
                 "status": "success",
@@ -280,6 +316,7 @@ class ChatGPTIntegration:
             }
         
         except Exception as e:
+            logger.error(f"✗ Error deleting file: {str(e)}")
             raise Exception(f"Error deleting file: {str(e)}")
     
     def chat(self, messages: List[Dict[str, str]], temperature: float = 0.7) -> str:
@@ -299,13 +336,69 @@ class ChatGPTIntegration:
                 messages=messages,
                 temperature=temperature
             )
+            logger.info(f"✓ Chat response received from {self.model}")
             return response.choices[0].message.content
-        except openai.error.AuthenticationError:
-            raise Exception("Invalid API key provided")
+        
+        except openai.error.AuthenticationError as e:
+            error_msg = (
+                "\n❌ AUTHENTICATION ERROR - Invalid or expired API key\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                "Troubleshooting steps:\n"
+                "1. Visit: https://platform.openai.com/account/api-keys\n"
+                "2. Create a NEW API key\n"
+                "3. Delete old/expired keys\n"
+                "4. Verify key starts with 'sk-'\n"
+                "5. Update .env file with new key\n"
+                "6. Restart the application\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            )
+            logger.error(error_msg)
+            raise Exception(error_msg)
+        
+        except openai.error.APIError as e:
+            error_str = str(e)
+            if "403" in error_str:
+                error_msg = (
+                    "\n❌ 403 FORBIDDEN - Resource not accessible\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    "This usually means one of:\n\n"
+                    "1️⃣  INVALID API KEY:\n"
+                    "   → Go to https://platform.openai.com/account/api-keys\n"
+                    "   → Create a NEW key\n"
+                    "   → Copy entire key (including 'sk-' prefix)\n"
+                    "   → Update .env file\n\n"
+                    "2️⃣  NO BILLING/CREDITS:\n"
+                    "   → Check https://platform.openai.com/account/billing/overview\n"
+                    "   → Add payment method or use free trial\n"
+                    "   → Verify you have available credits\n\n"
+                    "3️⃣  MODEL NOT ACCESSIBLE:\n"
+                    "   → Try using 'gpt-3.5-turbo' in .env\n"
+                    "   → Update OPENAI_MODEL=gpt-3.5-turbo\n\n"
+                    "4️⃣  ORGANIZATION PERMISSIONS:\n"
+                    "   → Check https://platform.openai.com/settings/organization/api-keys\n"
+                    "   → Verify user has API access\n"
+                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                )
+                logger.error(error_msg)
+                raise Exception(error_msg)
+            else:
+                raise Exception(f"OpenAI API Error: {error_str}")
+        
         except openai.error.RateLimitError:
-            raise Exception("Rate limit exceeded. Please try again later")
+            error_msg = (
+                "\n⚠️  RATE LIMITED - Too many requests\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                "Please wait a moment and try again.\n"
+                "Check: https://platform.openai.com/account/billing/usage\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            )
+            logger.error(error_msg)
+            raise Exception(error_msg)
+        
         except Exception as e:
-            raise Exception(f"Error communicating with OpenAI: {str(e)}")
+            error_msg = f"Chat error: {str(e)}"
+            logger.error(error_msg)
+            raise Exception(error_msg)
     
     def ask_question(self, question: str, system_prompt: Optional[str] = None) -> str:
         """
@@ -356,8 +449,10 @@ class ChatGPTIntegration:
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=max_tokens
             )
+            logger.info(f"✓ Text generation completed")
             return response.choices[0].message.content
         except Exception as e:
+            logger.error(f"✗ Text generation error: {str(e)}")
             raise Exception(f"Error generating text: {str(e)}")
 
 
